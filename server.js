@@ -462,7 +462,13 @@ function createMcpServer(apiKey) {
 // Express 라우팅 (SSE Transport)
 // ─────────────────────────────────────────────
 const transports = {};
-
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "*");
+  if (req.method === "OPTIONS") return res.sendStatus(200);
+  next();
+});
 app.get("/mcp", async (req, res) => {
   // 쿼리파라미터로 API 키 전달: ?key=YOUR_API_KEY
   const apiKey = req.query.key || DEFAULT_API_KEY;
