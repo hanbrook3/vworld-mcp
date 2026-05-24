@@ -25,7 +25,7 @@ app.use(express.json());
 // 환경변수: VWORLD_API_KEY=YOUR_API_KEY
 // ─────────────────────────────────────────────
 const DEFAULT_API_KEY = process.env.VWORLD_API_KEY || "";
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 const BASE_URL = "https://api.vworld.kr";
 
 // ─────────────────────────────────────────────
