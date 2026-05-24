@@ -21,8 +21,8 @@ app.use(express.json());
 
 // ─────────────────────────────────────────────
 // 환경변수 또는 쿼리파라미터로 API 키 전달
-// 쿼리: ?key=YOUR_API_KEY
-// 환경변수: VWORLD_API_KEY=YOUR_API_KEY
+// 쿼리: ?key=342A1875-7F06-3AF5-9A58-A3AC0A4F841C
+// 환경변수: VWORLD_API_KEY=342A1875-7F06-3AF5-9A58-A3AC0A4F841C
 // ─────────────────────────────────────────────
 const DEFAULT_API_KEY = process.env.VWORLD_API_KEY || "";
 const PORT = process.env.PORT || 8080;
@@ -470,12 +470,12 @@ app.use((req, res, next) => {
   next();
 });
 app.get("/mcp", async (req, res) => {
-  // 쿼리파라미터로 API 키 전달: ?key=YOUR_API_KEY
+  // 쿼리파라미터로 API 키 전달: ?key=342A1875-7F06-3AF5-9A58-A3AC0A4F841C
   const apiKey = req.query.key || DEFAULT_API_KEY;
 
   if (!apiKey) {
     return res.status(401).json({
-      error: "V-World API 키가 필요합니다. ?key=YOUR_API_KEY 형식으로 전달하세요.",
+      error: "V-World API 키가 필요합니다. ?key=342A1875-7F06-3AF5-9A58-A3AC0A4F841C 형식으로 전달하세요.",
     });
   }
 
@@ -519,5 +519,5 @@ app.get("/health", (_req, res) => {
 app.listen(PORT, () => {
   console.log(`V-World MCP Server 시작 — PORT ${PORT}`);
   console.log(`헬스체크: http://localhost:${PORT}/health`);
-  console.log(`MCP 엔드포인트: http://localhost:${PORT}/mcp?key=YOUR_API_KEY`);
+  console.log(`MCP 엔드포인트: http://localhost:${PORT}/mcp?key=342A1875-7F06-3AF5-9A58-A3AC0A4F841C`);
 });
