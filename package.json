@@ -1,0 +1,19 @@
+{
+  "name": "vworld-mcp",
+  "version": "1.0.0",
+  "description": "V-World 공간정보 MCP Server for Claude",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.10.2",
+    "express": "^4.18.2",
+    "zod": "^3.22.4"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
