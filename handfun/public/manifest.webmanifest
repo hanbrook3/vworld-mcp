@@ -1,0 +1,21 @@
+{
+  "name": "HandFun · 싱크 가사",
+  "short_name": "HandFun",
+  "description": "들리는 노래에 자동으로 싱크를 맞춰 가사와 발음을 띄워주는 앱",
+  "lang": "ko",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b0b16",
+  "theme_color": "#0b0b16",
+  "categories": ["music", "entertainment", "utilities"],
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

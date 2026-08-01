@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b0b16" />
+    <meta name="description" content="들리는 노래에 자동으로 싱크를 맞춰 가사와 발음을 띄워주는 앱" />
+    <title>HandFun · 싱크 가사</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/icons/icon.svg" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <!-- ================= 헤더 ================= -->
+      <header class="topbar">
+        <button class="brand" data-view="listen" type="button">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span class="brand-name">HandFun</span>
+        </button>
+        <div class="status-chip" id="statusChip" data-state="idle">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="statusText">대기 중</span>
+          <span class="level-meter" id="levelMeter" aria-hidden="true" hidden></span>
+        </div>
+      </header>
+
+      <!-- ================= 듣기 화면 ================= -->
+      <main class="view is-active" id="view-listen">
+        <div class="now-playing" id="nowPlaying" hidden>
+          <strong id="npTitle"></strong>
+          <span id="npArtist"></span>
+          <span class="np-meta" id="npMeta"></span>
+        </div>
+
+        <section class="stage" id="stage" aria-live="polite">
+          <div class="empty-state" id="emptyState">
+            <div class="empty-icon" aria-hidden="true">♪</div>
+            <h1>노래를 들려주세요</h1>
+            <p>
+              마이크로 들리는 노래를 알아내고,<br />
+              가사와 발음을 자동으로 맞춰 띄웁니다.
+            </p>
+            <div class="empty-actions">
+              <button class="btn btn-primary btn-lg" id="startBtnBig" type="button">듣기 시작</button>
+              <button class="btn btn-ghost" id="demoBtn" type="button">데모 보기</button>
+            </div>
+            <p class="hint" id="secureHint" hidden>
+              마이크는 HTTPS 또는 localhost 에서만 쓸 수 있습니다.
+            </p>
+          </div>
+
+          <div class="empty-state" id="noLyricsState" hidden>
+            <div class="empty-icon" aria-hidden="true">♪</div>
+            <h1>가사가 아직 없습니다</h1>
+            <p>
+              이 곡을 알아봤지만 표시할 가사가 없어요.<br />
+              가사를 등록하면 다음부터 자동으로 뜹니다.
+            </p>
+            <div class="empty-actions">
+              <button class="btn btn-primary" id="addLyricsBtn" type="button" hidden>가사 등록하기</button>
+            </div>
+          </div>
+
+          <ol class="lyrics" id="lyrics" hidden></ol>
+        </section>
+
+        <div class="stage-footer" id="stageFooter" hidden>
+          <div class="sync-bar">
+            <button class="nudge" id="nudgeBack" type="button" title="가사를 0.2초 늦춤">−0.2s</button>
+            <div class="sync-info">
+              <span id="syncPosition">0:00</span>
+              <span class="sync-sep">·</span>
+              <span id="syncOffsetLabel">싱크 0ms</span>
+            </div>
+            <button class="nudge" id="nudgeFwd" type="button" title="가사를 0.2초 당김">+0.2s</button>
+          </div>
+        </div>
+      </main>
+
+      <!-- ================= 라이브러리 화면 ================= -->
+      <main class="view" id="view-library">
+        <div class="view-head">
+          <h2>내 노래</h2>
+          <button class="btn btn-primary btn-sm" id="addTrackBtn" type="button">곡 추가</button>
+        </div>
+        <p class="view-desc">
+          여기에 등록한 곡은 마이크로 들려주기만 하면 바로 알아보고 재생 위치까지 찾아냅니다.
+          음원 파일은 서버로 올라가지 않고, 브라우저에서 만든 지문만 저장됩니다.
+        </p>
+        <ul class="track-list" id="trackList"></ul>
+        <p class="empty-note" id="libraryEmpty">아직 등록된 곡이 없습니다.</p>
+      </main>
+
+      <!-- ================= 곡 추가 화면 ================= -->
+      <main class="view" id="view-add">
+        <div class="view-head">
+          <h2>곡 추가</h2>
+          <button class="btn btn-ghost btn-sm" data-view="library" type="button">닫기</button>
+        </div>
+
+        <ol class="steps">
+          <li class="step">
+            <h3><span class="step-no">1</span> 음원 파일 고르기</h3>
+            <p class="step-desc">이 파일에서 지문을 만듭니다. 파일 자체는 업로드되지 않습니다.</p>
+            <label class="file-drop" id="fileDrop">
+              <input type="file" id="audioInput" accept="audio/*" hidden />
+              <span id="fileDropLabel">음원 파일 선택 (mp3, m4a, wav …)</span>
+            </label>
+            <div class="progress" id="ingestProgress" hidden>
+              <div class="progress-bar" id="ingestBar"></div>
+              <span class="progress-text" id="ingestText"></span>
+            </div>
+          </li>
+
+          <li class="step">
+            <h3><span class="step-no">2</span> 곡 정보</h3>
+            <div class="field-row">
+              <label class="field">
+                <span>제목</span>
+                <input type="text" id="addTitle" placeholder="곡 제목" />
+              </label>
+              <label class="field">
+                <span>아티스트</span>
+                <input type="text" id="addArtist" placeholder="아티스트" />
+              </label>
+            </div>
+          </li>
+
+          <li class="step">
+            <h3><span class="step-no">3</span> 가사</h3>
+            <p class="step-desc">
+              시간 태그가 있는 LRC 가사를 넣으면 줄 단위로 자동 싱크됩니다.
+              태그가 없는 가사도 넣을 수 있지만 자동으로 넘어가지는 않습니다.
+            </p>
+            <div class="lyrics-search">
+              <input type="text" id="lyricsQuery" placeholder="가사 검색 (곡명 + 아티스트)" />
+              <button class="btn btn-sm" id="lyricsSearchBtn" type="button">검색</button>
+            </div>
+            <ul class="search-results" id="lyricsResults" hidden></ul>
+            <p class="search-note" id="lyricsNote" hidden></p>
+            <textarea
+              id="addLyrics"
+              rows="8"
+              placeholder="[00:12.34] 가사를 여기에 붙여넣거나 위에서 검색해 가져오세요"
+            ></textarea>
+            <label class="file-line">
+              <input type="file" id="lrcInput" accept=".lrc,.txt,text/plain" hidden />
+              <span class="link" id="lrcPick">.lrc 파일에서 불러오기</span>
+            </label>
+          </li>
+
+          <li class="step">
+            <h3><span class="step-no">4</span> 뜻 (선택)</h3>
+            <p class="step-desc">
+              번역 가사를 넣으면 화면에 <b>원문 · 발음 · 뜻</b> 3단으로 뜹니다.
+              시간 태그가 있으면 시각으로, 없으면 줄 순서대로 원문과 짝지어집니다.
+            </p>
+            <textarea
+              id="addTranslation"
+              rows="6"
+              placeholder="한 줄에 하나씩, 원문 가사와 같은 순서로 번역을 넣으세요"
+            ></textarea>
+            <label class="file-line">
+              <input type="file" id="transInput" accept=".lrc,.txt,text/plain" hidden />
+              <span class="link" id="transPick">번역 파일에서 불러오기</span>
+            </label>
+            <p class="search-note" id="transNote" hidden></p>
+          </li>
+        </ol>
+
+        <div class="add-actions">
+          <button class="btn btn-primary btn-lg" id="saveTrackBtn" type="button" disabled>
+            라이브러리에 저장
+          </button>
+        </div>
+      </main>
+
+      <!-- ================= 설정 화면 ================= -->
+      <main class="view" id="view-settings">
+        <div class="view-head">
+          <h2>설정</h2>
+        </div>
+
+        <section class="setting-group">
+          <h3>발음 표기</h3>
+          <div class="segmented" id="styleSegmented" role="radiogroup"></div>
+          <p class="setting-hint" id="styleHint"></p>
+        </section>
+
+        <section class="setting-group">
+          <h3>뜻 표시</h3>
+          <label class="switch-row">
+            <span>
+              번역(뜻) 줄 보여주기
+              <small>곡에 번역 가사가 등록된 경우에만 나타납니다.</small>
+            </span>
+            <input type="checkbox" id="translationToggle" />
+          </label>
+        </section>
+
+        <section class="setting-group">
+          <h3>글자 크기</h3>
+          <div class="segmented" id="sizeSegmented" role="radiogroup">
+            <button type="button" role="radio" data-size="normal">보통</button>
+            <button type="button" role="radio" data-size="large">크게</button>
+            <button type="button" role="radio" data-size="huge">아주 크게</button>
+          </div>
+        </section>
+
+        <section class="setting-group">
+          <h3>싱크 미세조정</h3>
+          <div class="slider-row">
+            <input type="range" id="offsetSlider" min="-2000" max="2000" step="50" value="0" />
+            <output id="offsetOutput">0 ms</output>
+          </div>
+          <p class="setting-hint">
+            가사가 노래보다 늦게 넘어가면 오른쪽(+)으로, 너무 빨리 넘어가면 왼쪽(−)으로 옮기세요.
+          </p>
+        </section>
+
+        <section class="setting-group">
+          <h3>인식</h3>
+          <label class="switch-row">
+            <span>
+              앱을 열면 자동으로 듣기
+              <small>
+                마이크 권한을 이미 허용했다면 버튼을 누르지 않아도 바로 인식을 시작합니다.
+                조용할 때는 서버를 부르지 않고 기다립니다.
+              </small>
+            </span>
+            <input type="checkbox" id="autoStartToggle" />
+          </label>
+          <label class="switch-row">
+            <span>
+              화면 계속 켜두기
+              <small>노래를 따라 부르는 동안 화면이 꺼지지 않습니다.</small>
+            </span>
+            <input type="checkbox" id="wakeLockToggle" />
+          </label>
+          <label class="switch-row">
+            <span>
+              외부 인식 서비스 사용
+              <small id="externalHint">서버에 API 키가 설정되어 있어야 합니다.</small>
+            </span>
+            <input type="checkbox" id="externalToggle" />
+          </label>
+          <div class="slider-row">
+            <label for="intervalSlider">재인식 주기</label>
+            <input type="range" id="intervalSlider" min="3" max="15" step="1" value="6" />
+            <output id="intervalOutput">6초</output>
+          </div>
+        </section>
+
+        <section class="setting-group">
+          <h3>정보</h3>
+          <p class="setting-hint" id="serverInfo">서버 정보를 불러오는 중…</p>
+          <p class="setting-hint">
+            가사 저작권은 각 권리자에게 있습니다. 개인적인 감상·연습 목적으로만 사용하세요.
+          </p>
+        </section>
+      </main>
+
+      <!-- ================= 하단 탭 ================= -->
+      <nav class="tabbar">
+        <button type="button" data-view="listen" class="is-active">
+          <span class="tab-icon" aria-hidden="true">♪</span>듣기
+        </button>
+        <button type="button" data-view="library">
+          <span class="tab-icon" aria-hidden="true">☰</span>내 노래
+        </button>
+
+        <button class="mic-fab" id="micBtn" type="button" aria-label="듣기 시작/중지">
+          <span class="mic-icon" aria-hidden="true"></span>
+        </button>
+
+        <button type="button" data-view="settings">
+          <span class="tab-icon" aria-hidden="true">⚙</span>설정
+        </button>
+      </nav>
+    </div>
+
+    <!-- ================= 가사 편집 ================= -->
+    <div class="sheet" id="editSheet" hidden>
+      <div class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="editTitle">
+        <div class="sheet-head">
+          <h3 id="editTitle">가사 편집</h3>
+          <button class="btn btn-ghost btn-sm" id="editCancel" type="button">닫기</button>
+        </div>
+
+        <label class="field">
+          <span>원본 가사 (LRC)</span>
+          <textarea id="editLyrics" rows="8" placeholder="[00:12.34] 가사"></textarea>
+        </label>
+
+        <label class="field">
+          <span>뜻 (번역 가사 · 선택)</span>
+          <textarea id="editTranslation" rows="6" placeholder="원문과 같은 순서로 번역"></textarea>
+        </label>
+
+        <p class="search-note" id="editNote"></p>
+        <button class="btn btn-primary" id="editSave" type="button">저장</button>
+      </div>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
