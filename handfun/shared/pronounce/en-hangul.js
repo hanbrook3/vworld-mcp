@@ -85,6 +85,12 @@ laughter L AE F T ER | daughter | naughty N AO T IY | bought B AO T | brought B 
 caught K AO T | taught T AO T | fought F AO T | ought AO T | thought
 women W IH M IH N | woman W UH M AH N | men M EH N | man M AE N | children CH IH L D R AH N
 does | goes | shoes SH UW Z | toes T OW Z | dies D AY Z | tries T R AY Z
+moment M OW M AH N T | promise P R AA M IH S | reason R IY Z AH N | wonder W AH N D ER
+online AO N L AY N | sword S AO R D | cross K R AO S | crossing K R AO S IH NG
+oath OW TH | brave B R EY V | shout SH AW T | glory G L AO R IY | story S T AO R IY
+memory M EH M AO R IY | circle S ER K AH L | rising R AY Z IH NG | signs S AY N Z
+angel EY N JH AH L | angels EY N JH AH L Z | finger F IH NG G ER | anger AE NG G ER
+longer L AO NG G ER | stronger S T R AO NG G ER | among AH M AH NG | wrong R AO NG
 `;
 
 /** @type {Map<string, string[]>} */
@@ -139,7 +145,10 @@ const RULES = [
   [/^ck/, ['K']],
   [/^qu/, ['K', 'W']],
   [/^x/, ['K', 'S']],
-  [/^ng(?![aeiou])/, ['NG']],
+  // 'ong' 의 o 는 [ɑ] 가 아니라 [ɔ] 다 (song, long, strong)
+  [/^ong/, ['AO', 'NG']],
+  // 'ng' 는 [ŋ]. 다만 'nge' 는 대개 [ndʒ] 라 제외한다 (change, angel, orange)
+  [/^ng(?!e)/, ['NG']],
   [/^gh(?![aeiou])/, []], // night, through 등에서 묵음
   [/^gh/, ['G']],
 
@@ -256,6 +265,8 @@ export function guessPhones(word) {
     if (ch === 'y') {
       if (i === 0 || isVowelLetter(word[i - 1])) {
         phones.push('Y');
+      } else if (word.slice(i + 1) === 'ing') {
+        phones.push('AY'); // flying, trying, crying
       } else if (i === word.length - 1) {
         // 이 y 말고 다른 모음이 없으면 [aɪ] (fly, sky, why), 있으면 [i] (happy, baby)
         const hasOtherVowel = /[aeiou]/.test(word.slice(0, i));
@@ -274,9 +285,13 @@ export function guessPhones(word) {
       // 자음 1개 + 어말 y → 열린 음절이라 장모음 (baby, crazy, lady)
       const isOpenBeforeY =
         word[i + 1] && !isVowelLetter(word[i + 1]) && word[i + 2] === 'y' && i + 3 === word.length;
+      // 자음 1개 + -ing 도 같은 열린 음절 (rising, shining, driving)
+      const isOpenBeforeIng =
+        word[i + 1] && !isVowelLetter(word[i + 1]) && word.slice(i + 2) === 'ing';
       // 어말 모음도 길게 읽는다 (go, she, hi)
       const isOpenFinal = i === word.length - 1 && i > 0;
-      const table = isMagicE || isOpenBeforeY || isOpenFinal ? LONG_VOWEL : SHORT_VOWEL;
+      const table =
+        isMagicE || isOpenBeforeY || isOpenBeforeIng || isOpenFinal ? LONG_VOWEL : SHORT_VOWEL;
       phones.push(...(table[ch] ?? SHORT_VOWEL[ch]));
       i++;
       continue;
@@ -302,6 +317,14 @@ export function enToPhones(word) {
   const key = word.toLowerCase();
   const known = EXCEPTIONS.get(key);
   if (known) return known.slice();
+
+  // -ing 는 어간을 찾아본다 (giving → give, making → make)
+  // 'sing', 'bring' 처럼 어간이 아닌 경우를 피하려고 길이를 제한한다
+  if (key.endsWith('ing') && key.length > 5) {
+    const base = key.slice(0, -3);
+    const stem = EXCEPTIONS.get(base) ?? EXCEPTIONS.get(`${base}e`);
+    if (stem) return [...stem, 'IH', 'NG'];
+  }
 
   // 복수형/과거형은 어간을 찾아본다
   if (key.endsWith('s') && EXCEPTIONS.has(key.slice(0, -1))) {
@@ -380,6 +403,8 @@ export function phonesToHangul(phones) {
   /** phones[at] 이 다음 음절의 초성으로 쓰이는가 */
   const startsNextSyllable = (at) => {
     if (!CONSONANTS.has(phones[at])) return false;
+    // [ŋ] 은 한국어에서 초성이 될 수 없다. 항상 받침으로 붙인다 (singing 싱잉)
+    if (phones[at] === 'NG') return false;
     const n1 = phones[at + 1];
     // ㄹ 뒤에 반모음이 오면 받침으로만 적는다 (always 올웨이즈)
     if (phones[at] === 'L' && GLIDES.has(n1)) return false;
@@ -415,9 +440,10 @@ export function phonesToHangul(phones) {
       i++;
       const jamos = (VOWEL_JAMO[vowel] ?? ['ㅏ']).slice();
 
-      // 어말 ㄹ 앞의 약모음은 'ㅡ' 로 적는다 (little 리틀, people 피플)
+      // 어말 ㄹ 앞의 약모음은 'ㅡ' 로 적는다 (little 리틀, people 피플).
+      // 다만 ㅈ·ㅊ 뒤에서는 'ㅓ' 를 쓴다 (angel 에인절)
       if (vowel === 'AH' && phones[i] === 'L' && i + 1 === phones.length) {
-        jamos[0] = 'ㅡ';
+        if (onset !== 'JH' && onset !== 'CH' && onset !== 'ZH') jamos[0] = 'ㅡ';
       }
       // sh 는 뒤 모음을 이중모음으로 만든다 (shy 샤이, she 시)
       if (onset === 'SH' || onset === 'ZH') jamos[0] = Y_COMBINE[jamos[0]] ?? jamos[0];
@@ -458,6 +484,20 @@ export function phonesToHangul(phones) {
     }
 
     i++; // 알 수 없는 발음기호
+  }
+
+  // 이중모음 끝의 '이' 와 뒤따르는 [ɪ] 가 겹치면 하나로 줄인다 (flying 플라이잉 → 플라잉)
+  for (let k = syllables.length - 1; k > 0; k--) {
+    const prev = syllables[k - 1];
+    if (
+      syllables[k].onset === '' &&
+      syllables[k].vowel === 'ㅣ' &&
+      prev.onset === '' &&
+      prev.vowel === 'ㅣ' &&
+      prev.coda === ''
+    ) {
+      syllables.splice(k - 1, 1);
+    }
   }
 
   return syllables.map((s) => buildSyllable(s.onset, s.vowel, s.coda)).join('');

@@ -180,19 +180,30 @@ function getWorker() {
 // 가사 표시
 // ---------------------------------------------------------------------------
 
-/** 한 줄을 단어 단위로 쪼개고 각 단어의 발음을 미리 구해 둔다. */
+/**
+ * 한 줄을 단어 단위로 쪼개고 각 단어의 발음을 미리 구해 둔다.
+ * 후리가나가 달린 줄은 화면에는 한자를, 발음은 가나를 기준으로 만든다.
+ */
 function buildLineView(line) {
-  const words = line.words?.length
-    ? line.words.map((w) => w.text.trim()).filter(Boolean)
-    : line.text.split(/\s+/).filter(Boolean);
+  let words;
+  let readings;
 
-  const linePron = pronounce(line.text, settings.style);
-  const hasPron = Boolean(linePron);
+  if (line.words?.length) {
+    words = line.words.map((w) => w.text.trim()).filter(Boolean);
+    readings = line.words.map((w) => (w.reading ?? w.text).trim()).filter(Boolean);
+  } else {
+    words = line.text.split(/\s+/).filter(Boolean);
+    // 후리가나를 벗겨도 공백 위치는 그대로라 단어 수가 맞는다
+    readings = (line.reading ?? line.text).split(/\s+/).filter(Boolean);
+  }
+  if (readings.length !== words.length) readings = words;
+
+  const hasPron = Boolean(pronounce(line.reading ?? line.text, settings.style));
 
   return {
-    words: words.map((text) => ({
+    words: words.map((text, i) => ({
       text,
-      pron: hasPron ? pronounce(text, settings.style) ?? text : '',
+      pron: hasPron ? pronounce(readings[i], settings.style) ?? readings[i] : '',
     })),
     hasPron,
     totalChars: words.reduce((sum, w) => sum + w.length, 0) || 1,

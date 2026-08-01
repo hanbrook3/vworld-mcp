@@ -13,6 +13,14 @@ const TIME_TAG = /\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?\]/g;
 const WORD_TAG = /<(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?>/g;
 const META_TAG = /^\[([a-zA-Z#]+):(.*)\]$/;
 
+/**
+ * 후리가나 표기: 한자 바로 뒤 괄호 안의 가나.
+ *   君(きみ)の声(こえ)  ·  君（きみ）の声（こえ）  ·  君《きみ》の声《こえ》
+ * 일본어 가사는 한자가 대부분인데 읽는 법은 사전 없이 정할 수 없다.
+ * 후리가나가 붙어 있으면 그걸 읽기로 쓴다.
+ */
+const FURIGANA = /([一-鿿々〆ヵヶ]+)[(（《]([ぁ-ゖァ-ヺー]+)[)）》]/g;
+
 /** 마지막 가사 줄에 부여할 기본 길이 */
 const DEFAULT_TAIL_MS = 5000;
 
@@ -30,6 +38,23 @@ function tagToMs(min, sec, frac) {
 export function hasTimestamps(text) {
   TIME_TAG.lastIndex = 0;
   return TIME_TAG.test(text ?? '');
+}
+
+/**
+ * 후리가나를 벗겨 화면에 띄울 글자와 발음에 쓸 글자를 각각 만든다.
+ * 공백 위치는 그대로 두므로 단어 수가 어긋나지 않는다.
+ * @param {string} text
+ * @returns {{display: string, reading: string|null}} 후리가나가 없으면 reading 은 null
+ */
+export function stripFurigana(text) {
+  const source = String(text ?? '');
+  FURIGANA.lastIndex = 0;
+  if (!FURIGANA.test(source)) return { display: source, reading: null };
+
+  return {
+    display: source.replace(FURIGANA, (_, base) => base),
+    reading: source.replace(FURIGANA, (_, __, kana) => kana),
+  };
 }
 
 /**
@@ -78,12 +103,14 @@ export function parseLrc(text) {
 
     const body = line.slice(cursor);
     const words = parseWordTags(body);
-    const plain = body.replace(WORD_TAG, '').replace(/\s+/g, ' ').trim();
+    const raw = body.replace(WORD_TAG, '').replace(/\s+/g, ' ').trim();
+    const { display, reading } = stripFurigana(raw);
 
     for (const startMs of stamps) {
       entries.push({
         startMs,
-        text: plain,
+        text: display,
+        reading,
         // 다중 타임스탬프(후렴 반복)에서는 각 등장마다 단어 시각을 평행이동한다
         words: words ? shiftWords(words, startMs - (words[0]?.startMs ?? startMs)) : null,
       });
@@ -98,7 +125,10 @@ export function parseLrc(text) {
     startMs: e.startMs - offsetMs,
     endMs: 0,
     text: e.text,
-    words: e.words ? e.words.map((w) => ({ ...w, startMs: w.startMs - offsetMs, endMs: w.endMs - offsetMs })) : null,
+    reading: e.reading,
+    words: e.words
+      ? e.words.map((w) => ({ ...w, startMs: w.startMs - offsetMs, endMs: w.endMs - offsetMs }))
+      : null,
   }));
 
   const totalMs = meta.length ? parseLength(meta.length) : null;
@@ -127,10 +157,12 @@ function parseWordTags(body) {
     const textEnd = i + 1 < matches.length ? matches[i + 1].index : body.length;
     const chunk = body.slice(textStart, textEnd);
     if (!chunk.trim()) continue;
+    const { display, reading } = stripFurigana(chunk.replace(/\s+$/, ''));
     words.push({
       startMs: tagToMs(m[1], m[2], m[3]),
       endMs: 0,
-      text: chunk.replace(/\s+$/, ''),
+      text: display,
+      reading,
     });
   }
   return words.length ? words : null;
@@ -157,7 +189,10 @@ export function parsePlainLyrics(text) {
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter((l) => l.length > 0)
-    .map((l) => ({ startMs: 0, endMs: 0, text: l, words: null }));
+    .map((l) => {
+      const { display, reading } = stripFurigana(l);
+      return { startMs: 0, endMs: 0, text: display, reading, words: null };
+    });
   return { meta: {}, lines, synced: false, offsetMs: 0 };
 }
 

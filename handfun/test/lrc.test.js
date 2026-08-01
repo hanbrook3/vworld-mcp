@@ -6,6 +6,7 @@ import {
   parseLyrics,
   parsePlainLyrics,
   hasTimestamps,
+  stripFurigana,
   lineIndexAt,
   wordIndexAt,
   lineProgressAt,
@@ -118,6 +119,49 @@ test('줄 안에서 현재 단어와 진행률을 계산한다', () => {
   assert.equal(lineProgressAt(line, 13000), 1);
   assert.equal(lineProgressAt(line, 99999), 1, '범위를 벗어나도 0~1 로 고정');
   assert.equal(wordIndexAt({ words: null }, 100), -1);
+});
+
+test('후리가나를 화면용과 발음용으로 분리한다', () => {
+  const cases = [
+    ['君(きみ)の声(こえ)', '君の声', 'きみのこえ'],
+    ['夜空（よぞら）に光（ひか）る', '夜空に光る', 'よぞらにひかる'], // 전각 괄호
+    ['涙《なみだ》', '涙', 'なみだ'], // 루비 표기
+    ['強(つよ)く強(つよ)く', '強く強く', 'つよくつよく'], // 같은 한자 반복
+  ];
+  for (const [input, display, reading] of cases) {
+    assert.deepEqual(stripFurigana(input), { display, reading }, input);
+  }
+});
+
+test('후리가나가 없으면 reading 은 null 이다', () => {
+  assert.deepEqual(stripFurigana('こんにちは'), { display: 'こんにちは', reading: null });
+  assert.deepEqual(stripFurigana('hello (world)'), { display: 'hello (world)', reading: null });
+  assert.deepEqual(stripFurigana(''), { display: '', reading: null });
+});
+
+test('후리가나가 있어도 공백 위치가 유지되어 단어 수가 맞는다', () => {
+  const { display, reading } = stripFurigana('君(きみ)の声(こえ)が Catch the moment');
+  assert.equal(display.split(/\s+/).length, reading.split(/\s+/).length);
+  assert.equal(display, '君の声が Catch the moment');
+  assert.equal(reading, 'きみのこえが Catch the moment');
+});
+
+test('LRC 안의 후리가나를 읽는다', () => {
+  const parsed = parseLrc('[00:05.00] 君(きみ)の声(こえ)が聞(き)こえる\n[00:10.00] ただのかな');
+
+  assert.equal(parsed.lines[0].text, '君の声が聞こえる', '화면에는 한자를 그대로 보여준다');
+  assert.equal(parsed.lines[0].reading, 'きみのこえがきこえる');
+  assert.equal(parsed.lines[1].reading, null, '후리가나가 없는 줄은 reading 이 없다');
+});
+
+test('단어 단위 태그 안의 후리가나도 읽는다', () => {
+  const parsed = parseLrc('[00:10.00] <00:10.00>君(きみ)の <00:10.50>声(こえ)が');
+  const words = parsed.lines[0].words;
+
+  assert.equal(words[0].text, '君の');
+  assert.equal(words[0].reading, 'きみの');
+  assert.equal(words[1].text, '声が');
+  assert.equal(words[1].reading, 'こえが');
 });
 
 test('LRC 로 다시 직렬화할 수 있다', () => {
