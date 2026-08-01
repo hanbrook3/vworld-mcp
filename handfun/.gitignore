@@ -3,6 +3,7 @@ data/catalog.json
 data/catalog.json.tmp
 data/fingerprints/
 data/lyrics/
+data/translations/
 
 node_modules/
 *.log

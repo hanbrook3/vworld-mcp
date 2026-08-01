@@ -17,6 +17,7 @@ import { parseLyrics } from '../shared/lrc.js';
 const CATALOG_FILE = path.join(DATA_DIR, 'catalog.json');
 const FP_DIR = path.join(DATA_DIR, 'fingerprints');
 const LYRICS_DIR = path.join(DATA_DIR, 'lyrics');
+const TRANSLATION_DIR = path.join(DATA_DIR, 'translations');
 
 export class Catalog {
   constructor() {
@@ -29,6 +30,7 @@ export class Catalog {
   async init() {
     await fsp.mkdir(FP_DIR, { recursive: true });
     await fsp.mkdir(LYRICS_DIR, { recursive: true });
+    await fsp.mkdir(TRANSLATION_DIR, { recursive: true });
 
     let saved = { tracks: [] };
     try {
@@ -120,6 +122,7 @@ export class Catalog {
       createdAt: Date.now(),
       hasLyrics: false,
       hasSyncedLyrics: false,
+      hasTranslation: false,
       lyricsSource: '',
     };
 
@@ -128,6 +131,7 @@ export class Catalog {
     this.index.addTrack(id, landmarks);
 
     if (input.lyrics) await this.setLyrics(id, input.lyrics, input.lyricsSource);
+    if (input.translation) await this.setTranslation(id, input.translation);
     await this.persist();
     return this.tracks.get(id);
   }
@@ -155,12 +159,30 @@ export class Catalog {
   }
 
   async getLyrics(id) {
-    try {
-      return await fsp.readFile(path.join(LYRICS_DIR, `${id}.lrc`), 'utf8');
-    } catch (err) {
-      if (err.code === 'ENOENT') return null;
-      throw err;
+    return readTextFile(path.join(LYRICS_DIR, `${id}.lrc`));
+  }
+
+  /** 번역 가사를 저장한다. 타임스탬프가 있어도 없어도 된다. */
+  async setTranslation(id, translationText) {
+    const track = this.tracks.get(id);
+    if (!track) throw Object.assign(new Error('없는 곡입니다'), { statusCode: 404 });
+
+    const text = String(translationText ?? '');
+    const file = path.join(TRANSLATION_DIR, `${id}.lrc`);
+    if (text.trim()) {
+      await fsp.writeFile(file, text, 'utf8');
+      track.hasTranslation = true;
+    } else {
+      await fsp.rm(file, { force: true });
+      track.hasTranslation = false;
     }
+
+    await this.persist();
+    return track;
+  }
+
+  async getTranslation(id) {
+    return readTextFile(path.join(TRANSLATION_DIR, `${id}.lrc`));
   }
 
   async updateMeta(id, patch) {
@@ -182,6 +204,7 @@ export class Catalog {
     this.index.removeTrack(id);
     await fsp.rm(path.join(FP_DIR, `${id}.b64`), { force: true });
     await fsp.rm(path.join(LYRICS_DIR, `${id}.lrc`), { force: true });
+    await fsp.rm(path.join(TRANSLATION_DIR, `${id}.lrc`), { force: true });
     await this.persist();
     return true;
   }
@@ -199,5 +222,15 @@ export class Catalog {
       landmarkCount: this.index.landmarkCount,
       indexedTracks: this.index.trackCount,
     };
+  }
+}
+
+/** 파일이 없으면 null 을 돌려준다. */
+async function readTextFile(file) {
+  try {
+    return await fsp.readFile(file, 'utf8');
+  } catch (err) {
+    if (err.code === 'ENOENT') return null;
+    throw err;
   }
 }

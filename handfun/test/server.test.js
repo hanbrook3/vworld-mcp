@@ -150,6 +150,38 @@ test('지문 없이 요청해도 500 이 나지 않는다', async () => {
   assert.equal(result.body.matched, false);
 });
 
+test('번역 가사를 함께 저장하고 불러온다', async () => {
+  const song = makeSyntheticSong(30, SR, 8888);
+  const created = await api('POST', '/api/tracks', {
+    title: '번역 있는 곡',
+    landmarks: packLandmarks(fingerprint(song, SR)),
+    lyrics: '[00:05.00] I love you\n[00:10.00] Good night',
+    translation: '사랑해\n잘 자',
+  });
+
+  assert.equal(created.status, 201);
+  assert.equal(created.body.track.hasTranslation, true);
+
+  const detail = await api('GET', `/api/tracks/${created.body.track.id}`);
+  assert.equal(detail.body.translation, '사랑해\n잘 자');
+
+  // 번역만 따로 바꿀 수 있다
+  const patched = await api('PATCH', `/api/tracks/${created.body.track.id}`, {
+    translation: '널 사랑해\n좋은 밤',
+  });
+  assert.equal(patched.body.track.hasTranslation, true);
+  const after = await api('GET', `/api/tracks/${created.body.track.id}`);
+  assert.equal(after.body.translation, '널 사랑해\n좋은 밤');
+  assert.equal(after.body.lyrics, '[00:05.00] I love you\n[00:10.00] Good night', '원본은 그대로');
+
+  // 빈 값으로 지울 수 있다
+  const cleared = await api('PATCH', `/api/tracks/${created.body.track.id}`, { translation: '' });
+  assert.equal(cleared.body.track.hasTranslation, false);
+  assert.equal((await api('GET', `/api/tracks/${created.body.track.id}`)).body.translation, null);
+
+  await api('DELETE', `/api/tracks/${created.body.track.id}`);
+});
+
 test('메타데이터와 가사를 수정할 수 있다', async () => {
   const list = await api('GET', '/api/tracks');
   const id = list.body.tracks[0].id;

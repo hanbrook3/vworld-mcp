@@ -64,14 +64,20 @@ async function handleApi(req, res, url) {
     if (!track) return sendError(res, 404, '없는 곡입니다');
 
     if (method === 'GET') {
-      const lyrics = await catalog.getLyrics(track.id);
-      return sendJson(res, 200, { track, lyrics });
+      const [lyrics, translation] = await Promise.all([
+        catalog.getLyrics(track.id),
+        catalog.getTranslation(track.id),
+      ]);
+      return sendJson(res, 200, { track, lyrics, translation });
     }
     if (method === 'PATCH') {
       const body = await readJsonBody(req, config.maxBodyBytes);
       let updated = await catalog.updateMeta(track.id, body);
       if (body.lyrics !== undefined) {
         updated = await catalog.setLyrics(track.id, body.lyrics, body.lyricsSource ?? 'manual');
+      }
+      if (body.translation !== undefined) {
+        updated = await catalog.setTranslation(track.id, body.translation);
       }
       return sendJson(res, 200, { track: updated });
     }
@@ -140,6 +146,7 @@ async function identify(body) {
           durationMs: track.durationMs,
           hasLyrics: track.hasLyrics,
           hasSyncedLyrics: track.hasSyncedLyrics,
+          hasTranslation: track.hasTranslation,
         },
       };
     }

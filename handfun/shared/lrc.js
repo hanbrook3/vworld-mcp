@@ -202,6 +202,68 @@ export function parseLyrics(text) {
 }
 
 /**
+ * 번역 가사를 원본 줄에 붙인다.
+ *
+ * 번역본의 형태는 두 가지다.
+ *  - 타임스탬프가 있는 LRC → 시각으로 짝짓는다. 줄 수가 달라도 안전하다.
+ *  - 그냥 줄글            → 순서대로 짝짓는다.
+ *
+ * @param {ParsedLyrics} parsed 원본 (제자리에서 lines[i].translation 이 채워진다)
+ * @param {string} translationText
+ * @returns {{mode: 'time'|'index'|'none', matched: number, total: number}}
+ */
+export function attachTranslation(parsed, translationText) {
+  const total = parsed?.lines?.length ?? 0;
+  for (let i = 0; i < total; i++) parsed.lines[i].translation = null;
+
+  const text = String(translationText ?? '').trim();
+  if (!text || total === 0) return { mode: 'none', matched: 0, total };
+
+  let matched = 0;
+
+  if (hasTimestamps(text)) {
+    const translated = parseLrc(text).lines;
+    const byTime = new Map();
+    for (const line of translated) {
+      if (!byTime.has(line.startMs)) byTime.set(line.startMs, line.text);
+    }
+
+    for (const line of parsed.lines) {
+      let value = byTime.get(line.startMs);
+      if (value === undefined) {
+        // 초 단위 반올림 차이 정도는 가장 가까운 줄로 붙인다
+        let bestGap = TRANSLATION_TIME_TOLERANCE_MS;
+        for (const [startMs, candidate] of byTime) {
+          const gap = Math.abs(startMs - line.startMs);
+          if (gap <= bestGap) {
+            bestGap = gap;
+            value = candidate;
+          }
+        }
+      }
+      if (value) {
+        line.translation = value;
+        matched++;
+      }
+    }
+    return { mode: 'time', matched, total };
+  }
+
+  const plain = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  for (let i = 0; i < total && i < plain.length; i++) {
+    parsed.lines[i].translation = plain[i];
+    matched++;
+  }
+  return { mode: 'index', matched, total };
+}
+
+const TRANSLATION_TIME_TOLERANCE_MS = 1200;
+
+/**
  * 재생 위치에 해당하는 가사 줄 번호를 이분탐색으로 찾는다.
  * 첫 줄 시작 전이면 -1 을 반환한다.
  * @param {LyricLine[]} lines

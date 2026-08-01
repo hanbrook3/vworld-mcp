@@ -7,7 +7,13 @@
  *   → 매 프레임 현재 위치로 가사·발음 하이라이트
  */
 
-import { parseLyrics, lineIndexAt, wordIndexAt, lineProgressAt } from '/shared/lrc.js';
+import {
+  parseLyrics,
+  attachTranslation,
+  lineIndexAt,
+  wordIndexAt,
+  lineProgressAt,
+} from '/shared/lrc.js';
 import { SyncClock } from '/shared/sync-clock.js';
 import { ListenScheduler } from '/shared/listen-scheduler.js';
 import { pronounce, PRONUNCIATION_STYLES } from '/shared/pronounce/index.js';
@@ -62,6 +68,7 @@ const state = {
   activeLine: -1,
   serverConfig: { providers: {} },
   pendingTrack: null, // 곡 추가 화면에서 만든 지문
+  editingTrackId: null,
   wakeLock: null,
   recognizing: false,
 };
@@ -82,6 +89,7 @@ function loadSettings() {
     external: false,
     intervalSec: 6,
     autoStart: true, // 앱을 열면 알아서 듣기 시작
+    showTranslation: true, // 뜻(번역) 줄 표시
   };
   try {
     return { ...defaults, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') };
@@ -242,11 +250,20 @@ function renderLyrics(parsed) {
     });
     li.append(textEl);
 
+    // 2단: 발음
     if (view.hasPron) {
       const pronEl = document.createElement('span');
       pronEl.className = 'lyric-pron';
       pronEl.textContent = view.words.map((w) => w.pron).join(' ');
       li.append(pronEl);
+    }
+
+    // 3단: 뜻
+    if (settings.showTranslation && line.translation) {
+      const transEl = document.createElement('span');
+      transEl.className = 'lyric-trans';
+      transEl.textContent = line.translation;
+      li.append(transEl);
     }
 
     // 가사를 눌러 그 줄로 싱크를 맞출 수 있다 (인식이 어긋났을 때 유용)
@@ -349,15 +366,16 @@ function showNowPlaying(title, artist, meta) {
 }
 
 async function loadLocalTrack(track) {
-  const { lyrics } = await api('GET', `/api/tracks/${track.id}`);
+  const { lyrics, translation } = await api('GET', `/api/tracks/${track.id}`);
   state.trackId = track.id;
   state.lyrics = lyrics ? parseLyrics(lyrics) : null;
+  if (state.lyrics && translation) attachTranslation(state.lyrics, translation);
 
-  showNowPlaying(
-    track.title,
-    track.artist,
-    state.lyrics?.synced ? '내 라이브러리 · 싱크 가사' : '내 라이브러리 · 가사 없음',
-  );
+  const parts = ['내 라이브러리'];
+  if (!state.lyrics) parts.push('가사 없음');
+  else parts.push(state.lyrics.synced ? '싱크 가사' : '가사(싱크 없음)');
+  if (translation) parts.push('뜻 포함');
+  showNowPlaying(track.title, track.artist, parts.join(' · '));
 
   if (state.lyrics) {
     renderLyrics(state.lyrics);
@@ -756,14 +774,55 @@ async function startManual(track) {
 }
 
 async function openLyricsEditor(track) {
-  const { lyrics } = await api('GET', `/api/tracks/${track.id}`);
-  const next = prompt(`'${track.title}' 의 가사 (LRC 형식)`, lyrics ?? '');
-  if (next === null) return;
-  await api('PATCH', `/api/tracks/${track.id}`, { lyrics: next });
-  toast('가사를 저장했습니다');
-  refreshLibrary();
-  if (state.trackId === track.id) {
-    state.trackId = null; // 다음 인식 때 다시 읽도록
+  const { lyrics, translation } = await api('GET', `/api/tracks/${track.id}`);
+
+  $('editTitle').textContent = `${track.title} · 가사 편집`;
+  $('editLyrics').value = lyrics ?? '';
+  $('editTranslation').value = translation ?? '';
+  $('editSheet').hidden = false;
+  updateEditNote();
+
+  state.editingTrackId = track.id;
+}
+
+function closeLyricsEditor() {
+  $('editSheet').hidden = true;
+  state.editingTrackId = null;
+}
+
+/** 원문과 번역이 몇 줄씩인지 알려줘 짝이 맞는지 눈으로 확인할 수 있게 한다. */
+function updateEditNote() {
+  const lyrics = $('editLyrics').value;
+  const translation = $('editTranslation').value;
+  if (!translation.trim()) {
+    $('editNote').textContent = '';
+    return;
+  }
+
+  const parsed = parseLyrics(lyrics);
+  const summary = attachTranslation(parsed, translation);
+  $('editNote').textContent =
+    summary.mode === 'time'
+      ? `시간 태그로 짝지음 · ${summary.total}줄 중 ${summary.matched}줄에 뜻이 붙습니다`
+      : `줄 순서로 짝지음 · ${summary.total}줄 중 ${summary.matched}줄에 뜻이 붙습니다`;
+}
+
+async function saveLyricsEditor() {
+  const id = state.editingTrackId;
+  if (!id) return;
+
+  try {
+    await api('PATCH', `/api/tracks/${id}`, {
+      lyrics: $('editLyrics').value,
+      translation: $('editTranslation').value,
+    });
+    toast('가사를 저장했습니다');
+    closeLyricsEditor();
+    refreshLibrary();
+    // 지금 재생 중인 곡이면 다음 인식 때 새로 읽는다
+    if (state.trackId === id) state.trackId = null;
+  } catch (err) {
+    toast(`저장하지 못했습니다: ${err.message}`, 'error');
   }
 }
 
@@ -888,6 +947,30 @@ function escapeHtml(text) {
   return String(text).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 }
 
+/** 곡 추가 화면에서 원문과 번역의 줄이 잘 맞는지 미리 알려준다. */
+function updateAddTranslationNote() {
+  const note = $('transNote');
+  const translation = $('addTranslation').value;
+  if (!translation.trim()) {
+    note.hidden = true;
+    return;
+  }
+
+  const parsed = parseLyrics($('addLyrics').value);
+  const summary = attachTranslation(parsed, translation);
+  note.hidden = false;
+
+  if (summary.total === 0) {
+    note.textContent = '원본 가사를 먼저 넣어 주세요.';
+  } else if (summary.matched === summary.total) {
+    note.textContent = `${summary.total}줄 모두 뜻이 붙습니다.`;
+  } else {
+    note.textContent =
+      `${summary.total}줄 중 ${summary.matched}줄만 뜻이 붙습니다. ` +
+      (summary.mode === 'time' ? '시간 태그가 서로 다른지 확인해 주세요.' : '줄 수를 맞춰 주세요.');
+  }
+}
+
 async function saveTrack({ force = false } = {}) {
   if (!state.pendingTrack) return;
 
@@ -900,6 +983,7 @@ async function saveTrack({ force = false } = {}) {
       durationMs: state.pendingTrack.durationMs,
       landmarks: state.pendingTrack.landmarks,
       lyrics: $('addLyrics').value,
+      translation: $('addTranslation').value,
       lyricsSource: 'user',
       force,
     });
@@ -930,6 +1014,8 @@ function resetAddForm() {
   $('addTitle').value = '';
   $('addArtist').value = '';
   $('addLyrics').value = '';
+  $('addTranslation').value = '';
+  $('transNote').hidden = true;
   $('lyricsQuery').value = '';
   $('lyricsResults').hidden = true;
   $('lyricsNote').hidden = true;
@@ -1003,6 +1089,12 @@ function buildSettingsUi() {
     saveSettings();
   });
 
+  $('translationToggle').addEventListener('change', (event) => {
+    settings.showTranslation = event.target.checked;
+    saveSettings();
+    refreshLyricsView();
+  });
+
   $('wakeLockToggle').addEventListener('change', (event) => {
     settings.wakeLock = event.target.checked;
     saveSettings();
@@ -1039,6 +1131,7 @@ function syncSettingsUi() {
   $('wakeLockToggle').checked = settings.wakeLock;
   $('externalToggle').checked = settings.external;
   $('autoStartToggle').checked = settings.autoStart;
+  $('translationToggle').checked = settings.showTranslation;
 }
 
 function nudge(deltaMs) {
@@ -1085,10 +1178,33 @@ function bindEvents() {
   $('lrcPick').addEventListener('click', () => $('lrcInput').click());
   $('lrcInput').addEventListener('change', async (event) => {
     const file = event.target.files?.[0];
-    if (file) $('addLyrics').value = await file.text();
+    if (file) {
+      $('addLyrics').value = await file.text();
+      updateAddTranslationNote();
+    }
   });
 
-  $('saveTrackBtn').addEventListener('click', saveTrack);
+  $('transPick').addEventListener('click', () => $('transInput').click());
+  $('transInput').addEventListener('change', async (event) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      $('addTranslation').value = await file.text();
+      updateAddTranslationNote();
+    }
+  });
+  $('addTranslation').addEventListener('input', updateAddTranslationNote);
+  $('addLyrics').addEventListener('input', updateAddTranslationNote);
+
+  $('saveTrackBtn').addEventListener('click', () => saveTrack());
+
+  // 가사 편집 시트
+  $('editCancel').addEventListener('click', closeLyricsEditor);
+  $('editSave').addEventListener('click', saveLyricsEditor);
+  $('editLyrics').addEventListener('input', updateEditNote);
+  $('editTranslation').addEventListener('input', updateEditNote);
+  $('editSheet').addEventListener('click', (event) => {
+    if (event.target === $('editSheet')) closeLyricsEditor(); // 바깥을 누르면 닫는다
+  });
 
   // 앱이 백그라운드로 갔다 오면 화면 켜두기와 오디오를 다시 살려야 한다
   document.addEventListener('visibilitychange', async () => {

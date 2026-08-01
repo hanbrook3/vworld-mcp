@@ -7,6 +7,7 @@ import {
   parsePlainLyrics,
   hasTimestamps,
   stripFurigana,
+  attachTranslation,
   lineIndexAt,
   wordIndexAt,
   lineProgressAt,
@@ -162,6 +163,77 @@ test('단어 단위 태그 안의 후리가나도 읽는다', () => {
   assert.equal(words[0].reading, 'きみの');
   assert.equal(words[1].text, '声が');
   assert.equal(words[1].reading, 'こえが');
+});
+
+test('번역을 줄 순서대로 붙인다', () => {
+  const parsed = parseLrc('[00:05.00] I love you\n[00:10.00] Good night\n[00:15.00] See you');
+  const summary = attachTranslation(parsed, '사랑해\n잘 자\n또 봐');
+
+  assert.deepEqual(summary, { mode: 'index', matched: 3, total: 3 });
+  assert.equal(parsed.lines[0].translation, '사랑해');
+  assert.equal(parsed.lines[1].translation, '잘 자');
+  assert.equal(parsed.lines[2].translation, '또 봐');
+});
+
+test('번역에 시간 태그가 있으면 시각으로 짝짓는다', () => {
+  const parsed = parseLrc('[00:05.00] A\n[00:10.00] B\n[00:15.00] C');
+  // 순서가 뒤섞여 있어도 시각으로 찾아간다
+  const summary = attachTranslation(parsed, '[00:15.00] 다\n[00:05.00] 가\n[00:10.00] 나');
+
+  assert.equal(summary.mode, 'time');
+  assert.equal(summary.matched, 3);
+  assert.equal(parsed.lines[0].translation, '가');
+  assert.equal(parsed.lines[1].translation, '나');
+  assert.equal(parsed.lines[2].translation, '다');
+});
+
+test('시간이 조금 어긋나도 가장 가까운 번역을 붙인다', () => {
+  const parsed = parseLrc('[00:05.00] A\n[00:10.00] B');
+  const summary = attachTranslation(parsed, '[00:05.30] 가\n[00:09.80] 나');
+
+  assert.equal(summary.matched, 2);
+  assert.equal(parsed.lines[0].translation, '가');
+  assert.equal(parsed.lines[1].translation, '나');
+});
+
+test('시간이 많이 다르면 붙이지 않는다', () => {
+  const parsed = parseLrc('[00:05.00] A\n[00:10.00] B');
+  const summary = attachTranslation(parsed, '[01:30.00] 엉뚱한 줄');
+
+  assert.equal(summary.matched, 0);
+  assert.equal(parsed.lines[0].translation, null);
+  assert.equal(parsed.lines[1].translation, null);
+});
+
+test('번역 줄이 모자라면 있는 만큼만 붙는다', () => {
+  const parsed = parseLrc('[00:05.00] A\n[00:10.00] B\n[00:15.00] C');
+  const summary = attachTranslation(parsed, '가\n나');
+
+  assert.deepEqual(summary, { mode: 'index', matched: 2, total: 3 });
+  assert.equal(parsed.lines[2].translation, null, '남는 줄은 비워 둔다');
+});
+
+test('번역을 지우면 기존 번역도 사라진다', () => {
+  const parsed = parseLrc('[00:05.00] A');
+  attachTranslation(parsed, '가');
+  assert.equal(parsed.lines[0].translation, '가');
+
+  const summary = attachTranslation(parsed, '');
+  assert.deepEqual(summary, { mode: 'none', matched: 0, total: 1 });
+  assert.equal(parsed.lines[0].translation, null);
+});
+
+test('가사가 없으면 번역도 붙지 않는다', () => {
+  const parsed = parseLyrics('');
+  assert.deepEqual(attachTranslation(parsed, '가\n나'), { mode: 'none', matched: 0, total: 0 });
+});
+
+test('싱크 없는 평문 가사에도 번역을 붙일 수 있다', () => {
+  const parsed = parseLyrics('first line\nsecond line');
+  const summary = attachTranslation(parsed, '첫 줄\n둘째 줄');
+
+  assert.equal(summary.mode, 'index');
+  assert.equal(parsed.lines[1].translation, '둘째 줄');
 });
 
 test('LRC 로 다시 직렬화할 수 있다', () => {
