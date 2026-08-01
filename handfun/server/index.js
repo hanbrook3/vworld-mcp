@@ -203,8 +203,13 @@ export function createServer() {
     } catch (err) {
       const status = err?.statusCode ?? 500;
       if (status >= 500) console.error('[handfun]', err);
-      if (!res.headersSent) sendError(res, status, err?.message ?? '서버 오류');
-      else res.end();
+      if (!res.headersSent) {
+        // 중복 등록은 이미 있는 곡을 함께 알려줘야 안내할 수 있다
+        const extra = err?.existingTrack ? { existingTrack: err.existingTrack } : {};
+        sendError(res, status, err?.message ?? '서버 오류', extra);
+      } else {
+        res.end();
+      }
     }
   });
 }

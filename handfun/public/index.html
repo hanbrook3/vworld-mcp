@@ -24,6 +24,7 @@
         <div class="status-chip" id="statusChip" data-state="idle">
           <span class="status-dot" aria-hidden="true"></span>
           <span id="statusText">대기 중</span>
+          <span class="level-meter" id="levelMeter" aria-hidden="true" hidden></span>
         </div>
       </header>
 
@@ -194,6 +195,16 @@
 
         <section class="setting-group">
           <h3>인식</h3>
+          <label class="switch-row">
+            <span>
+              앱을 열면 자동으로 듣기
+              <small>
+                마이크 권한을 이미 허용했다면 버튼을 누르지 않아도 바로 인식을 시작합니다.
+                조용할 때는 서버를 부르지 않고 기다립니다.
+              </small>
+            </span>
+            <input type="checkbox" id="autoStartToggle" />
+          </label>
           <label class="switch-row">
             <span>
               화면 계속 켜두기

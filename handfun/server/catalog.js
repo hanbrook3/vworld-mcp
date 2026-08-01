@@ -62,14 +62,51 @@ export class Catalog {
   }
 
   /**
+   * 이미 등록된 곡인지 확인한다.
+   *
+   * 같은 곡이 두 번 들어오면 매칭할 때 1등과 2등의 표가 비슷해져
+   * '어느 쪽인지 확신할 수 없음'으로 판정되고, 결국 그 곡은 영영 인식되지 않는다.
+   * 그래서 등록 시점에 막는다.
+   *
+   * @param {{hashes: ArrayLike<number>, times: ArrayLike<number>}} landmarks
+   * @returns {object | null} 이미 있는 곡
+   */
+  findDuplicate(landmarks) {
+    if (this.index.trackCount === 0) return null;
+
+    // 곡 전체가 아니라 앞부분만 질의해도 충분하고, 훨씬 빠르다
+    const sampleSize = Math.min(landmarks.hashes.length, 4000);
+    const probe = {
+      hashes: Array.prototype.slice.call(landmarks.hashes, 0, sampleSize),
+      times: Array.prototype.slice.call(landmarks.times, 0, sampleSize),
+    };
+
+    // 같은 곡이 이미 있다면 표가 압도적으로 몰린다. 서로 다른 곡이 우연히
+    // 이 정도로 겹치지는 않으므로 기준을 넉넉히 잡아도 오탐이 없다.
+    const match = this.index.match(probe, { minVotes: 40, minRatio: 1, minSignificance: 6 });
+    return match ? this.get(match.trackId) : null;
+  }
+
+  /**
    * 곡을 등록한다.
    * @param {{title?: string, artist?: string, album?: string, durationMs?: number,
-   *          landmarks: string, lyrics?: string, lyricsSource?: string}} input
+   *          landmarks: string, lyrics?: string, lyricsSource?: string,
+   *          force?: boolean}} input
    */
   async addTrack(input) {
     const landmarks = unpackLandmarks(input.landmarks ?? '');
     if (landmarks.hashes.length === 0) {
       throw Object.assign(new Error('지문 데이터가 비어 있습니다'), { statusCode: 400 });
+    }
+
+    if (!input.force) {
+      const existing = this.findDuplicate(landmarks);
+      if (existing) {
+        throw Object.assign(new Error('이미 등록된 곡입니다'), {
+          statusCode: 409,
+          existingTrack: existing,
+        });
+      }
     }
 
     const id = crypto.randomUUID();

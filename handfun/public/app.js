@@ -9,6 +9,7 @@
 
 import { parseLyrics, lineIndexAt, wordIndexAt, lineProgressAt } from '/shared/lrc.js';
 import { SyncClock } from '/shared/sync-clock.js';
+import { ListenScheduler } from '/shared/listen-scheduler.js';
 import { pronounce, PRONUNCIATION_STYLES } from '/shared/pronounce/index.js';
 import { MicRecorder, encodeWav, bufferToBase64 } from '/mic.js';
 
@@ -17,7 +18,9 @@ import { MicRecorder, encodeWav, bufferToBase64 } from '/mic.js';
 // ---------------------------------------------------------------------------
 
 const WINDOW_SECONDS = 5; // 한 번 인식할 때 듣는 길이
+const TICK_MS = 1000; // 소리 상태를 확인하는 주기
 const SETTINGS_KEY = 'handfun.settings.v1';
+const MIC_GRANTED_KEY = 'handfun.micGranted';
 
 const DEMO_LYRICS = `[ti:데모 트랙]
 [ar:HandFun]
@@ -42,6 +45,11 @@ const $ = (id) => document.getElementById(id);
 const settings = loadSettings();
 const clock = new SyncClock();
 const mic = new MicRecorder();
+const scheduler = new ListenScheduler({
+  baseIntervalMs: settings.intervalSec * 1000,
+  // 녹음 창의 대부분이 음악으로 차야 인식을 보낸다
+  minLoudMs: WINDOW_SECONDS * 1000 * 0.8,
+});
 
 const state = {
   view: 'listen',
@@ -58,7 +66,7 @@ const state = {
   recognizing: false,
 };
 
-let recognizeTimer = null;
+let tickTimer = null;
 let fpWorker = null;
 
 // ---------------------------------------------------------------------------
@@ -73,6 +81,7 @@ function loadSettings() {
     wakeLock: true,
     external: false,
     intervalSec: 6,
+    autoStart: true, // 앱을 열면 알아서 듣기 시작
   };
   try {
     return { ...defaults, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') };
@@ -100,7 +109,13 @@ async function api(method, path, body) {
     body: body ? JSON.stringify(body) : undefined,
   });
   const payload = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(payload.error ?? `요청 실패 (${res.status})`);
+  if (!res.ok) {
+    // 호출한 쪽이 상태 코드에 따라 다르게 처리할 수 있도록 실어 보낸다
+    throw Object.assign(new Error(payload.error ?? `요청 실패 (${res.status})`), {
+      status: res.status,
+      ...payload,
+    });
+  }
   return payload;
 }
 
@@ -407,9 +422,17 @@ async function recognizeOnce() {
 
     const result = await api('POST', '/api/identify', body);
 
+    scheduler.report(result.matched);
+
     if (!result.matched) {
-      const status = clock.miss();
-      setStatus(status === 'lost' || !state.lyrics ? '노래를 찾는 중…' : '듣는 중', 'listening');
+      const clockState = clock.miss();
+      if (clockState === 'lost') {
+        // 곡이 끝났거나 바뀐 것으로 본다. 다음에 잡히면 가사를 새로 읽는다.
+        state.trackId = null;
+        setStatus('노래를 찾는 중…', 'listening');
+      } else {
+        setStatus(state.lyrics ? '듣는 중' : '노래를 찾는 중…', 'listening');
+      }
       return;
     }
 
@@ -429,6 +452,7 @@ async function recognizeOnce() {
       }
     }
   } catch (err) {
+    scheduler.report(false);
     setStatus('인식 실패', 'error');
     console.warn('[recognize]', err);
   } finally {
@@ -436,55 +460,154 @@ async function recognizeOnce() {
   }
 }
 
+/**
+ * 1초마다 돌면서 "지금 인식을 시도할지" 정한다.
+ * 조용하면 서버를 부르지 않고, 노래가 시작되면 주기를 기다리지 않고 바로 인식한다.
+ */
+function tick() {
+  if (!state.listening) return;
+
+  updateLevelMeter();
+
+  // 제스처가 없으면 브라우저가 오디오를 멈춰 둔다
+  if (mic.needsGesture) {
+    setStatus('화면을 한 번 눌러주세요', 'error');
+    return;
+  }
+
+  // 창을 채울 만큼 듣기 전에는 판단하지 않는다
+  if (!mic.hasSeconds(WINDOW_SECONDS)) {
+    setStatus('듣는 중', 'listening');
+    return;
+  }
+
+  const decision = scheduler.decide({ rms: mic.recentRms(1), nowMs: performance.now() });
+
+  if (decision.silent) {
+    setStatus('조용함 · 소리를 기다립니다', 'listening');
+    return;
+  }
+  if (decision.recognize) recognizeOnce();
+  else if (decision.reason === 'warming') setStatus('노래를 듣는 중…', 'listening');
+  else if (clock.state !== 'locked') setStatus('듣는 중', 'listening');
+}
+
+function updateLevelMeter() {
+  // RMS 를 0~1 로 눌러 편다. 조용한 소리도 눈에 보이도록 제곱근을 쓴다.
+  const ratio = state.listening ? Math.min(1, Math.sqrt(mic.level / 0.15)) : 0;
+  $('levelMeter').style.setProperty('--level', ratio.toFixed(3));
+}
+
 function hasExternalProvider() {
   const p = state.serverConfig.providers ?? {};
   return Boolean(p.acrcloud || p.audd);
 }
 
-async function startListening() {
-  if (state.listening) return;
+/**
+ * @param {{silent?: boolean}} [options] silent 면 실패해도 토스트를 띄우지 않는다
+ *                                        (자동 시작이 조용히 실패해야 하는 경우)
+ */
+async function startListening({ silent = false } = {}) {
+  if (state.listening) return false;
   stopDemo();
 
   if (!window.isSecureContext) {
-    toast('마이크는 HTTPS 또는 localhost 에서만 쓸 수 있습니다', 'error');
-    return;
+    if (!silent) toast('마이크는 HTTPS 또는 localhost 에서만 쓸 수 있습니다', 'error');
+    return false;
   }
 
   try {
     setStatus('마이크 준비 중…', 'listening');
     await mic.start();
+    rememberMicPermission(true);
   } catch (err) {
+    rememberMicPermission(false);
     setStatus('마이크 사용 불가', 'error');
-    toast(
-      err?.name === 'NotAllowedError'
-        ? '마이크 권한이 거부되었습니다. 브라우저 설정에서 허용해 주세요.'
-        : `마이크를 열지 못했습니다: ${err.message}`,
-      'error',
-    );
-    return;
+    if (!silent) {
+      toast(
+        err?.name === 'NotAllowedError'
+          ? '마이크 권한이 거부되었습니다. 브라우저 설정에서 허용해 주세요.'
+          : `마이크를 열지 못했습니다: ${err.message}`,
+        'error',
+      );
+    }
+    return false;
   }
 
   state.listening = true;
+  scheduler.reset();
+  scheduler.setBaseInterval(settings.intervalSec * 1000);
   $('micBtn').classList.add('is-listening');
+  $('levelMeter').hidden = false;
   setStatus('듣는 중', 'listening');
-  showView('listen');
   await requestWakeLock();
 
-  // 버퍼가 찰 때까지 기다렸다가 첫 인식을 시도한다
-  clearInterval(recognizeTimer);
-  setTimeout(recognizeOnce, WINDOW_SECONDS * 1000 + 300);
-  recognizeTimer = setInterval(recognizeOnce, settings.intervalSec * 1000);
+  // 자동 시작은 브라우저가 오디오를 멈춰 둘 수 있다. 첫 터치에 다시 돌린다.
+  if (mic.needsGesture) armGestureResume();
+
+  clearInterval(tickTimer);
+  tickTimer = setInterval(tick, TICK_MS);
+  return true;
 }
 
 async function stopListening() {
   if (!state.listening) return;
   state.listening = false;
-  clearInterval(recognizeTimer);
-  recognizeTimer = null;
+  clearInterval(tickTimer);
+  tickTimer = null;
   await mic.stop();
   releaseWakeLock();
   $('micBtn').classList.remove('is-listening');
+  $('levelMeter').hidden = true;
   setStatus('대기 중', 'idle');
+}
+
+function armGestureResume() {
+  const resume = async () => {
+    if (!state.listening) return;
+    await mic.resume();
+    if (mic.needsGesture) armGestureResume(); // 아직이면 다음 터치를 기다린다
+    else setStatus('듣는 중', 'listening');
+  };
+  document.addEventListener('pointerdown', resume, { once: true });
+}
+
+function rememberMicPermission(granted) {
+  try {
+    if (granted) localStorage.setItem(MIC_GRANTED_KEY, '1');
+    else localStorage.removeItem(MIC_GRANTED_KEY);
+  } catch {
+    /* 저장 공간이 없어도 상관없다 */
+  }
+}
+
+/**
+ * 앱을 열자마자 듣기를 시작한다.
+ * 단, 권한을 아직 받지 않았다면 자동으로 권한 팝업을 띄우지 않는다.
+ * (사용자가 이유를 모르는 채 팝업을 보게 되고, 브라우저가 막기도 한다)
+ */
+async function maybeAutoStart() {
+  if (!settings.autoStart || !window.isSecureContext) return;
+
+  let granted = false;
+  try {
+    granted = localStorage.getItem(MIC_GRANTED_KEY) === '1';
+  } catch {
+    /* 무시 */
+  }
+
+  try {
+    const status = await navigator.permissions.query({ name: 'microphone' });
+    granted = status.state === 'granted';
+    status.onchange = () => {
+      if (status.state === 'denied') stopListening();
+    };
+  } catch {
+    // Safari 등 microphone 권한 조회를 지원하지 않는 브라우저는
+    // 예전에 성공한 적이 있는지로 판단한다
+  }
+
+  if (granted) await startListening({ silent: true });
 }
 
 async function requestWakeLock() {
@@ -754,7 +877,7 @@ function escapeHtml(text) {
   return String(text).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 }
 
-async function saveTrack() {
+async function saveTrack({ force = false } = {}) {
   if (!state.pendingTrack) return;
 
   const button = $('saveTrackBtn');
@@ -767,6 +890,7 @@ async function saveTrack() {
       landmarks: state.pendingTrack.landmarks,
       lyrics: $('addLyrics').value,
       lyricsSource: 'user',
+      force,
     });
 
     toast('라이브러리에 저장했습니다');
@@ -774,8 +898,18 @@ async function saveTrack() {
     showView('library');
     refreshLibrary();
   } catch (err) {
-    toast(`저장하지 못했습니다: ${err.message}`, 'error');
     button.disabled = false;
+    if (err.status === 409) {
+      const name = err.existingTrack?.title ?? '같은 곡';
+      const proceed = confirm(
+        `'${name}' 이(가) 이미 등록되어 있습니다.\n\n` +
+          '같은 곡을 두 번 등록하면 둘 중 어느 쪽인지 가릴 수 없어\n' +
+          '그 곡이 인식되지 않습니다.\n\n그래도 등록할까요?',
+      );
+      if (proceed) await saveTrack({ force: true });
+      return;
+    }
+    toast(`저장하지 못했습니다: ${err.message}`, 'error');
   }
 }
 
@@ -850,10 +984,12 @@ function buildSettingsUi() {
     settings.intervalSec = Number(event.target.value);
     saveSettings();
     syncSettingsUi();
-    if (state.listening) {
-      clearInterval(recognizeTimer);
-      recognizeTimer = setInterval(recognizeOnce, settings.intervalSec * 1000);
-    }
+    scheduler.setBaseInterval(settings.intervalSec * 1000);
+  });
+
+  $('autoStartToggle').addEventListener('change', (event) => {
+    settings.autoStart = event.target.checked;
+    saveSettings();
   });
 
   $('wakeLockToggle').addEventListener('change', (event) => {
@@ -891,6 +1027,7 @@ function syncSettingsUi() {
 
   $('wakeLockToggle').checked = settings.wakeLock;
   $('externalToggle').checked = settings.external;
+  $('autoStartToggle').checked = settings.autoStart;
 }
 
 function nudge(deltaMs) {
@@ -912,7 +1049,7 @@ function bindEvents() {
   $('micBtn').addEventListener('click', () => {
     state.listening ? stopListening() : startListening();
   });
-  $('startBtnBig').addEventListener('click', startListening);
+  $('startBtnBig').addEventListener('click', () => startListening());
   $('demoBtn').addEventListener('click', startDemo);
 
   $('nudgeBack').addEventListener('click', () => nudge(-200));
@@ -942,9 +1079,15 @@ function bindEvents() {
 
   $('saveTrackBtn').addEventListener('click', saveTrack);
 
-  // 앱이 백그라운드로 갔다 오면 화면 켜두기를 다시 요청해야 한다
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && state.listening) requestWakeLock();
+  // 앱이 백그라운드로 갔다 오면 화면 켜두기와 오디오를 다시 살려야 한다
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState !== 'visible') return;
+    if (state.listening) {
+      requestWakeLock();
+      await mic.resume();
+    } else {
+      maybeAutoStart();
+    }
   });
 }
 
@@ -982,6 +1125,9 @@ async function init() {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').catch(() => {});
   }
+
+  // 권한이 이미 있으면 버튼을 누르지 않아도 바로 듣기 시작한다
+  maybeAutoStart();
 }
 
 init();

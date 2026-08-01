@@ -100,6 +100,40 @@ test('등록한 곡을 마이크 녹음처럼 인식하고 재생 위치를 돌�
   assert.ok(result.body.confidence > 0.5);
 });
 
+test('같은 곡을 두 번 등록하면 막는다', async () => {
+  const song = makeSyntheticSong(60, SR, 2024); // 위에서 이미 등록한 곡
+  const duplicate = await api('POST', '/api/tracks', {
+    title: '실수로 또 등록',
+    landmarks: packLandmarks(fingerprint(song, SR)),
+  });
+
+  assert.equal(duplicate.status, 409);
+  assert.match(duplicate.body.error, /이미 등록/);
+  assert.equal(duplicate.body.existingTrack.title, '테스트 곡', '어느 곡과 겹치는지 알려준다');
+
+  const list = await api('GET', '/api/tracks');
+  assert.equal(list.body.tracks.length, 1, '중복은 저장되지 않았다');
+
+  // 사용자가 굳이 원하면 force 로 통과시킬 수 있다
+  const forced = await api('POST', '/api/tracks', {
+    title: '강제 등록',
+    landmarks: packLandmarks(fingerprint(song, SR)),
+    force: true,
+  });
+  assert.equal(forced.status, 201);
+  await api('DELETE', `/api/tracks/${forced.body.track.id}`);
+});
+
+test('다른 곡은 중복으로 막지 않는다', async () => {
+  const other = makeSyntheticSong(60, SR, 30303);
+  const created = await api('POST', '/api/tracks', {
+    title: '다른 곡',
+    landmarks: packLandmarks(fingerprint(other, SR)),
+  });
+  assert.equal(created.status, 201);
+  await api('DELETE', `/api/tracks/${created.body.track.id}`);
+});
+
 test('모르는 곡은 매칭하지 않는다', async () => {
   const other = makeSyntheticSong(20, SR, 999999);
   const result = await api('POST', '/api/identify', {

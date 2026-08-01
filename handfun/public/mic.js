@@ -66,21 +66,56 @@ export class MicRecorder {
     this.source.connect(this.node);
   }
 
+  /** 사용자 제스처 없이는 오디오가 시작되지 않는 상태인가 */
+  get needsGesture() {
+    return this.context?.state === 'suspended';
+  }
+
+  /** 화면 터치 등 제스처 뒤에 호출해 오디오를 다시 돌린다. */
+  async resume() {
+    if (this.context?.state === 'suspended') await this.context.resume();
+    return this.context?.state === 'running';
+  }
+
   #append(chunk) {
     const ring = this.ring;
     if (!ring) return;
 
-    let peak = 0;
+    let sumSq = 0;
     for (let i = 0; i < chunk.length; i++) {
       const v = chunk[i];
       ring[this.writeIndex] = v;
       this.writeIndex = (this.writeIndex + 1) % ring.length;
-      const abs = v < 0 ? -v : v;
-      if (abs > peak) peak = abs;
+      sumSq += v * v;
     }
     this.totalWritten += chunk.length;
-    // 레벨 표시는 급격히 튀지 않게 완만히 따라가게 한다
-    this.level = Math.max(peak, this.level * 0.8);
+
+    // 화면 표시용 레벨. 청크마다(약 85ms) 갱신되므로 미터가 자연스럽게 움직인다.
+    const chunkRms = Math.sqrt(sumSq / chunk.length);
+    this.level = this.level * 0.7 + chunkRms * 0.3;
+  }
+
+  /**
+   * 최근 몇 초의 RMS. 소리가 나고 있는지 판단하는 데 쓴다.
+   * 표시용 `level` 과 달리 평활 없이 실제 구간을 재므로 판단이 흔들리지 않는다.
+   */
+  recentRms(seconds = 1) {
+    if (!this.ring) return 0;
+    const length = Math.min(
+      this.ring.length,
+      Math.floor(seconds * this.sampleRate),
+      this.totalWritten,
+    );
+    if (length <= 0) return 0;
+
+    let sum = 0;
+    let read = (this.writeIndex - length + this.ring.length) % this.ring.length;
+    for (let i = 0; i < length; i++) {
+      const v = this.ring[read];
+      sum += v * v;
+      read = (read + 1) % this.ring.length;
+    }
+    return Math.sqrt(sum / length);
   }
 
   /**

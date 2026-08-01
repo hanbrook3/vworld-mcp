@@ -121,6 +121,27 @@ body {
   color: var(--text);
 }
 
+/* 마이크 입력 레벨. 소리가 실제로 들어오고 있는지 한눈에 보인다. */
+.level-meter {
+  --level: 0;
+  position: relative;
+  width: 26px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+  flex: none;
+}
+
+.level-meter::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(var(--level) * 100%);
+  background: linear-gradient(90deg, var(--pron), var(--accent-soft));
+  transition: width 0.12s linear;
+}
+
 @keyframes pulse {
   0%,
   100% {

@@ -19,6 +19,7 @@ const SHELL = [
   '/icons/icon.svg',
   '/shared/lrc.js',
   '/shared/sync-clock.js',
+  '/shared/listen-scheduler.js',
   '/shared/fingerprint.js',
   '/shared/fingerprint-index.js',
   '/shared/dsp.js',
