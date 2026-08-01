@@ -1,0 +1,10 @@
+# 사용자가 등록한 곡의 지문·가사·메타데이터 (개인 데이터라 저장소에 올리지 않는다)
+data/catalog.json
+data/catalog.json.tmp
+data/fingerprints/
+data/lyrics/
+
+node_modules/
+*.log
+.env
+.DS_Store

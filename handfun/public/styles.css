@@ -1,0 +1,953 @@
+/* HandFun — 어두운 곳에서 멀리서도 읽히는 것을 목표로 한 화면 */
+
+:root {
+  --bg: #0b0b16;
+  --bg-soft: #14142a;
+  --bg-card: rgba(255, 255, 255, 0.045);
+  --line: rgba(255, 255, 255, 0.1);
+  --text: #f2f3ff;
+  --text-dim: #9aa0c0;
+  --text-faint: #5f6488;
+  --accent: #7c6cff;
+  --accent-soft: #a99bff;
+  --pron: #4fd6c8;
+  --danger: #ff6b8a;
+  --ok: #4ade80;
+
+  --lyric-size: clamp(1.6rem, 7vw, 2.6rem);
+  --lyric-sub: clamp(1rem, 4vw, 1.4rem);
+
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overscroll-behavior: none;
+}
+
+body {
+  background: radial-gradient(120% 80% at 50% 0%, #1a1738 0%, var(--bg) 55%) fixed;
+  color: var(--text);
+  font-family:
+    'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Noto Sans KR',
+    'Malgun Gothic', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+/* ---------------------------------------------------------------- 헤더 */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: calc(var(--safe-top) + 12px) 16px 12px;
+  flex: none;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.brand-mark {
+  width: 22px;
+  height: 22px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--accent), var(--pron));
+  box-shadow: 0 0 18px rgba(124, 108, 255, 0.55);
+}
+
+.brand-name {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-size: 1.05rem;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  flex: none;
+}
+
+.status-chip[data-state='listening'] .status-dot {
+  background: var(--accent-soft);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.status-chip[data-state='locked'] .status-dot {
+  background: var(--ok);
+}
+.status-chip[data-state='error'] .status-dot {
+  background: var(--danger);
+}
+.status-chip[data-state='locked'] {
+  color: var(--text);
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
+}
+
+/* ---------------------------------------------------------------- 화면 전환 */
+.view {
+  display: none;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  padding: 0 16px;
+}
+
+.view.is-active {
+  display: flex;
+}
+
+#view-library,
+#view-add,
+#view-settings {
+  overflow-y: auto;
+  padding-bottom: 120px;
+}
+
+.view-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 6px 0 10px;
+}
+
+.view-head h2 {
+  margin: 0;
+  font-size: 1.35rem;
+  letter-spacing: -0.02em;
+}
+
+.view-desc {
+  margin: 0 0 16px;
+  color: var(--text-dim);
+  font-size: 0.86rem;
+  line-height: 1.6;
+}
+
+/* ---------------------------------------------------------------- 재생 정보 */
+.now-playing {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  margin-bottom: 8px;
+  flex: none;
+}
+
+.now-playing strong {
+  font-size: 0.98rem;
+  letter-spacing: -0.01em;
+}
+
+.now-playing span {
+  font-size: 0.82rem;
+  color: var(--text-dim);
+}
+
+.np-meta {
+  font-size: 0.72rem !important;
+  color: var(--text-faint) !important;
+}
+
+/* ---------------------------------------------------------------- 가사 무대 */
+.stage {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 88%, transparent);
+}
+
+.empty-state {
+  text-align: center;
+  padding: 24px 8px;
+}
+
+.empty-icon {
+  font-size: 3.2rem;
+  color: var(--accent);
+  opacity: 0.65;
+  margin-bottom: 8px;
+}
+
+.empty-state h1 {
+  font-size: 1.4rem;
+  margin: 0 0 10px;
+  letter-spacing: -0.02em;
+}
+
+.empty-state p {
+  margin: 0 0 22px;
+  color: var(--text-dim);
+  line-height: 1.7;
+  font-size: 0.92rem;
+}
+
+.empty-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+}
+
+.hint {
+  margin-top: 18px !important;
+  font-size: 0.8rem !important;
+  color: var(--danger) !important;
+}
+
+.lyrics {
+  list-style: none;
+  margin: 0;
+  padding: 32vh 4px;
+  overflow-y: auto;
+  scrollbar-width: none;
+  scroll-behavior: smooth;
+  height: 100%;
+}
+
+.lyrics::-webkit-scrollbar {
+  display: none;
+}
+
+.lyric-line {
+  padding: 14px 6px;
+  color: var(--text-faint);
+  font-size: var(--lyric-size);
+  font-weight: 700;
+  line-height: 1.28;
+  letter-spacing: -0.02em;
+  transition:
+    color 0.35s ease,
+    opacity 0.35s ease,
+    transform 0.35s ease;
+  transform-origin: left center;
+  opacity: 0.55;
+}
+
+.lyric-line.is-near {
+  color: var(--text-dim);
+  opacity: 0.8;
+}
+
+.lyric-line.is-active {
+  color: var(--text);
+  opacity: 1;
+}
+
+/* 노래방식 진행 표시: 지나간 단어와 지금 부르는 단어를 색으로 구분한다.
+   글자 폭 기준이 아니라 단어 기준이라 가사가 여러 줄로 접혀도 어긋나지 않는다. */
+.lyric-text {
+  display: inline;
+}
+
+.lyric-word {
+  transition: color 0.18s ease, text-shadow 0.18s ease;
+}
+
+/* 현재 줄 안에서 아직 안 부른 단어는 한 단계 어둡게 두어 진행이 눈에 보이게 한다 */
+.lyric-line.is-active .lyric-word {
+  color: rgba(242, 243, 255, 0.42);
+}
+
+.lyric-line.is-active .lyric-word.is-sung {
+  color: var(--accent-soft);
+}
+
+.lyric-line.is-active .lyric-word.is-current {
+  color: #fff;
+  text-shadow: 0 0 26px rgba(124, 108, 255, 0.8);
+}
+
+.lyric-pron {
+  display: block;
+  margin-top: 5px;
+  font-size: var(--lyric-sub);
+  font-weight: 600;
+  color: var(--pron);
+  opacity: 0.85;
+  letter-spacing: 0;
+}
+
+.lyric-line:not(.is-active):not(.is-near) .lyric-pron {
+  opacity: 0.4;
+}
+
+/* 글자 크기 설정 */
+body[data-size='large'] {
+  --lyric-size: clamp(2rem, 8.5vw, 3.2rem);
+  --lyric-sub: clamp(1.15rem, 4.8vw, 1.7rem);
+}
+
+body[data-size='huge'] {
+  --lyric-size: clamp(2.4rem, 10.5vw, 4rem);
+  --lyric-sub: clamp(1.3rem, 5.6vw, 2rem);
+}
+
+/* ---------------------------------------------------------------- 싱크 바 */
+.stage-footer {
+  flex: none;
+  padding: 8px 0 4px;
+}
+
+.sync-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+}
+
+.sync-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.sync-sep {
+  opacity: 0.4;
+}
+
+.nudge {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--line);
+  color: var(--text-dim);
+  border-radius: 10px;
+  padding: 7px 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+
+.nudge:active {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* ---------------------------------------------------------------- 버튼 */
+.btn {
+  font: inherit;
+  font-weight: 600;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  padding: 10px 18px;
+  cursor: pointer;
+  transition: transform 0.12s ease, background 0.2s ease;
+}
+
+.btn:active {
+  transform: scale(0.97);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent), #5b4bd6);
+  border-color: transparent;
+  box-shadow: 0 8px 24px rgba(124, 108, 255, 0.32);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-dim);
+}
+
+.btn-lg {
+  padding: 14px 30px;
+  font-size: 1rem;
+  border-radius: 14px;
+}
+
+.btn-sm {
+  padding: 7px 14px;
+  font-size: 0.82rem;
+  border-radius: 10px;
+}
+
+.btn-danger {
+  color: var(--danger);
+  border-color: rgba(255, 107, 138, 0.35);
+  background: rgba(255, 107, 138, 0.08);
+}
+
+/* ---------------------------------------------------------------- 라이브러리 */
+.track-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.track-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 14px;
+  border-radius: 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+}
+
+.track-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.track-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.track-sub {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  margin-top: 3px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  background: rgba(124, 108, 255, 0.18);
+  color: var(--accent-soft);
+}
+
+.badge.warn {
+  background: rgba(255, 176, 32, 0.14);
+  color: #ffc861;
+}
+
+.empty-note {
+  color: var(--text-faint);
+  font-size: 0.86rem;
+  text-align: center;
+  padding: 32px 0;
+}
+
+/* ---------------------------------------------------------------- 곡 추가 */
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.step h3 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 6px;
+  font-size: 1rem;
+  letter-spacing: -0.01em;
+}
+
+.step-no {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex: none;
+}
+
+.step-desc {
+  margin: 0 0 10px;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  line-height: 1.6;
+}
+
+.file-drop {
+  display: grid;
+  place-items: center;
+  padding: 26px 16px;
+  border: 1.5px dashed var(--line);
+  border-radius: 14px;
+  color: var(--text-dim);
+  font-size: 0.88rem;
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.file-drop:hover,
+.file-drop.is-ready {
+  border-color: var(--accent);
+  background: rgba(124, 108, 255, 0.06);
+  color: var(--text);
+}
+
+.progress {
+  margin-top: 10px;
+  height: 26px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  position: relative;
+  overflow: hidden;
+}
+
+.progress-bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: linear-gradient(90deg, var(--accent), var(--pron));
+  transition: width 0.25s ease;
+}
+
+.progress-text {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.field-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.field {
+  flex: 1 1 160px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.field span {
+  font-size: 0.76rem;
+  color: var(--text-dim);
+}
+
+input[type='text'],
+textarea {
+  width: 100%;
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 11px 13px;
+  resize: vertical;
+}
+
+input[type='text']:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+  line-height: 1.65;
+  margin-top: 10px;
+}
+
+.lyrics-search {
+  display: flex;
+  gap: 8px;
+}
+
+.lyrics-search input {
+  flex: 1;
+}
+
+.search-results {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.search-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 11px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.search-item:hover {
+  border-color: var(--accent);
+}
+
+.search-item .track-main {
+  font-size: 0.86rem;
+}
+
+.search-note {
+  margin: 10px 0 0;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+.file-line {
+  display: block;
+  margin-top: 10px;
+}
+
+.link {
+  color: var(--accent-soft);
+  font-size: 0.82rem;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.add-actions {
+  margin: 26px 0 10px;
+  display: grid;
+}
+
+/* ---------------------------------------------------------------- 설정 */
+.setting-group {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.setting-group h3 {
+  margin: 0 0 12px;
+  font-size: 0.92rem;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.segmented {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  border: 1px solid var(--line);
+}
+
+.segmented button {
+  flex: 1;
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 600;
+  padding: 9px 6px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.segmented button[aria-checked='true'] {
+  background: var(--accent);
+  color: #fff;
+}
+
+.setting-hint {
+  margin: 10px 0 0;
+  font-size: 0.78rem;
+  color: var(--text-faint);
+  line-height: 1.6;
+}
+
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.slider-row label {
+  font-size: 0.84rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.slider-row input[type='range'] {
+  flex: 1;
+  accent-color: var(--accent);
+}
+
+.slider-row output {
+  font-size: 0.82rem;
+  color: var(--text);
+  min-width: 62px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+}
+
+.switch-row span {
+  font-size: 0.88rem;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.switch-row small {
+  font-size: 0.74rem;
+  color: var(--text-faint);
+  line-height: 1.5;
+}
+
+.switch-row input[type='checkbox'] {
+  width: 46px;
+  height: 27px;
+  accent-color: var(--accent);
+  flex: none;
+}
+
+/* ---------------------------------------------------------------- 하단 탭 */
+.tabbar {
+  display: flex;
+  align-items: flex-end;
+  flex: none;
+  gap: 4px;
+  padding: 8px 16px calc(var(--safe-bottom) + 8px);
+  border-top: 1px solid var(--line);
+  background: rgba(11, 11, 22, 0.86);
+  backdrop-filter: blur(14px);
+}
+
+.tabbar button {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  background: none;
+  border: 0;
+  color: var(--text-faint);
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 6px 0;
+  cursor: pointer;
+}
+
+.tabbar button.is-active {
+  color: var(--accent-soft);
+}
+
+.tab-icon {
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+/* ---------------------------------------------------------------- 마이크 버튼 */
+/* 탭 바 안에 자리를 차지하도록 두어 다른 탭을 가리지 않게 한다.
+   `.tabbar button` 규칙보다 뒤에 오면서 특이도도 같아야 배경이 덮이지 않는다. */
+.tabbar .mic-fab {
+  position: relative;
+  flex: 0 0 60px;
+  align-self: flex-end;
+  margin: -22px 12px 2px;
+  padding: 0;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  border: 3px solid var(--bg);
+  background: linear-gradient(135deg, var(--accent), #5b4bd6);
+  box-shadow: 0 10px 30px rgba(124, 108, 255, 0.45);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  z-index: 20;
+  transition: transform 0.15s ease, box-shadow 0.25s ease;
+}
+
+.tabbar .mic-fab:active {
+  transform: scale(0.94);
+}
+
+.tabbar .mic-fab.is-listening {
+  background: linear-gradient(135deg, var(--danger), #d63b62);
+  box-shadow: 0 10px 34px rgba(255, 107, 138, 0.5);
+}
+
+.mic-fab.is-listening::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 107, 138, 0.5);
+  animation: ripple 1.8s ease-out infinite;
+}
+
+@keyframes ripple {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+}
+
+/* 마이크 아이콘 (이미지 없이 CSS 로만) */
+.mic-icon {
+  position: relative;
+  width: 13px;
+  height: 21px;
+  border-radius: 7px;
+  background: #fff;
+}
+
+.mic-icon::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 23px;
+  transform: translateX(-50%);
+  width: 21px;
+  height: 10px;
+  border: 2.5px solid #fff;
+  border-top: 0;
+  border-radius: 0 0 11px 11px;
+}
+
+.mic-fab.is-listening .mic-icon {
+  border-radius: 4px;
+  width: 18px;
+  height: 18px;
+}
+
+.mic-fab.is-listening .mic-icon::after {
+  display: none;
+}
+
+/* ---------------------------------------------------------------- 토스트 */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--safe-bottom) + 104px);
+  transform: translateX(-50%);
+  max-width: min(90vw, 420px);
+  padding: 12px 18px;
+  border-radius: 12px;
+  background: rgba(28, 28, 52, 0.96);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  z-index: 40;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  animation: toast-in 0.22s ease;
+}
+
+.toast[data-tone='error'] {
+  border-color: rgba(255, 107, 138, 0.45);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

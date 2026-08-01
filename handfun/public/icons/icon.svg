@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7c6cff" />
+      <stop offset="1" stop-color="#2f2a6b" />
+    </linearGradient>
+    <linearGradient id="wave" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#4fd6c8" />
+      <stop offset="1" stop-color="#a99bff" />
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="112" fill="url(#bg)" />
+
+  <!-- 음파: 마이크로 들어오는 소리 -->
+  <g stroke="url(#wave)" stroke-width="22" stroke-linecap="round" fill="none" opacity="0.95">
+    <path d="M96 256 v-44" />
+    <path d="M148 256 v-92" />
+    <path d="M200 256 v-140" />
+    <path d="M252 256 v-104" />
+    <path d="M304 256 v-160" />
+    <path d="M356 256 v-84" />
+    <path d="M408 256 v-52" />
+  </g>
+
+  <!-- 가사 줄: 소리가 글자로 바뀌는 모습 -->
+  <g fill="#ffffff" opacity="0.95">
+    <rect x="96" y="308" width="230" height="26" rx="13" />
+    <rect x="96" y="358" width="320" height="26" rx="13" />
+    <rect x="96" y="408" width="164" height="26" rx="13" opacity="0.55" />
+  </g>
+</svg>

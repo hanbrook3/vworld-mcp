@@ -1,0 +1,18 @@
+{
+  "name": "handfun",
+  "version": "0.1.0",
+  "private": true,
+  "description": "외부에서 들리는 노래에 자동으로 싱크를 맞춰 가사와 발음을 띄워주는 앱",
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {},
+  "license": "MIT"
+}

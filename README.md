@@ -65,3 +65,10 @@ https://your-server.railway.app/mcp?key=YOUR_VWORLD_API_KEY
 ```
 VWORLD_API_KEY=YOUR_VWORLD_API_KEY
 ```
+
+---
+
+## 이 저장소의 다른 프로젝트
+
+- [`handfun/`](./handfun) — **HandFun · 싱크 가사**
+  들리는 노래를 마이크로 인식해 재생 위치까지 찾아내고, 가사와 발음을 자동으로 맞춰 띄워주는 앱.
